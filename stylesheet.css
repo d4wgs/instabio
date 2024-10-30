@@ -6,13 +6,21 @@ h1 {
     text-align: center;
     color: #2f3030;
     padding: 20vw;
+    font-size: 3em;
+    margin-bottom: 0em;
 }
 
 p {
     text-align: center;
     color: #2f3030;
+    font-size: 1em;
+    margin-top: 0em;
 }
 
 #viewCount {
     color: #e6531e;
+}
+
+marquee {
+    width: 100%;
 }
