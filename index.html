@@ -1,15 +1,35 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<title>SK! personal web</title>
-<link rel="stylesheet" href="stylesheet.css">
-<script src="SKscript.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SK! Personal Web</title>
+  <link rel="stylesheet" href="stylesheet.css">
 </head>
 <body>
 
-<marquee>hello loyal page viewer</marquee>
+  <div class="marquee">
+    <div class="marquee-content">hello loyal page viewer</div>
+  </div>
 
-<h1>this page has <span id="viewCount">Loading...</span> unique views</h1>
-<p>(no i can't see exactly who viewed my page)</p>
+  <main>
+    <section aria-label="Unique view count">
+      <h1>
+        This page has <span id="viewCount" aria-live="polite">Loading...</span> unique views
+      </h1>
+      <p>(no i can't see exactly who viewed my page)</p>
+    </section>
+  </main>
+  
 
+  <div class="launch-container">
+    <h3 class="launch-info">
+      This page was launched on <span class="highlight">10/29/24 21:38 EST</span>.
+      <br>
+      It has been <span id="timeSinceLaunch" class="highlight">calculating...</span> since launch.
+    </h3>
+  </div> 
+
+  <script src="SKscript.js"></script>
 </body>
 </html>
