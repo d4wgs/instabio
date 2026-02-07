@@ -24,52 +24,18 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const BADGES = [
-  // Morning
-  "Morning Shift",
-  "Coffee Break",
-  "First Scroll",
-  "Sunrise Check-In",
-  "Commute Click",
+/**
+ * Badge pools by EST time bucket.
+ * These are only used when the visitor is NEW (first time ever for that Firebase uid).
+ */
+const BADGE_POOLS = {
+  morning: ["Morning Shift", "Coffee Break", "First Scroll", "Sunrise Check-In", "Commute Click"],
+  night: ["Midnight Shift", "Overnight Shift", "Lights Out", "Last Scroll", "2AM Check-In", "Ghost Mode"],
 
-  // Night / Late Night
-  "Midnight Shift",
-  "Overnight Shift",
-  "Lights Out",
-  "Last Scroll",
-  "2AM Check-In",
-  "Ghost Mode",
-
-  // Mobile
-  "Pocket Visitor",
-  "Low Signal-High Intent",
-  "Notification Check",
-  "Charging Soon",
-
-  // Desktop
-  "Second Monitor",
-  "Keyboard Confirmed",
-  "Cursor Operator",
-  "Full-Screen Visitor",
-
-  // Time on page
-  "Drive-By",
-  "In & Out",
-  "Quick Scan",
-  "Brief Visit",
-  "Stayed a Minute",
-  "Verified Interest",
-  "AFK",
-
-  // Clicks today
-  "Single Visit",
-  "Second Look",
-  "Came Back?!",
-  "Repeat Visitor",
-  "Monitoring",
-  "High Frequency",
-  "Verified Checker"
-];
+  // Optional buckets (kept small on purpose); you can expand if you want
+  day: ["Coffee Break", "First Scroll", "Commute Click"],
+  late: ["Ghost Mode", "2AM Check-In", "Lights Out"]
+};
 
 function getTodayKey() {
   const d = new Date();
@@ -79,10 +45,24 @@ function getTodayKey() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function getDeviceTag() {
-  const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
-  const isSmall = window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
-  return (isTouch && isSmall) ? "Mobile" : "Desktop";
+/** Returns hour in America/New_York (0-23), independent of viewer’s local timezone. */
+function getNYHour() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    hour12: false
+  }).formatToParts(new Date());
+
+  const hourStr = parts.find(p => p.type === "hour")?.value ?? "0";
+  return parseInt(hourStr, 10);
+}
+
+function getTimeBucketNY() {
+  const h = getNYHour();
+  if (h >= 5 && h < 12) return "morning";
+  if (h >= 12 && h < 18) return "day";
+  if (h >= 18 && h < 24) return "night";
+  return "late";
 }
 
 function pickClicksTodayTag(clicks) {
@@ -122,28 +102,34 @@ async function ensureUniqueAndBadge() {
 
     const stats = statsSnap.exists()
       ? statsSnap.data()
-      : { uniqueVisitors: 0, badgeCursor: 0 };
+      : { uniqueVisitors: 0 };
 
     let isNew = false;
     let mainBadge = null;
 
+    // We now keep a separate cursor PER bucket (morning/day/night/late)
+    const bucket = getTimeBucketNY();
+    const pool = BADGE_POOLS[bucket] || BADGE_POOLS.night;
+    const cursorField = `badgeCursor_${bucket}`;
+
     if (!visitorSnap.exists()) {
       isNew = true;
 
-      const cursor = typeof stats.badgeCursor === "number" ? stats.badgeCursor : 0;
-      mainBadge = BADGES[cursor % BADGES.length];
+      const cursor = (typeof stats[cursorField] === "number") ? stats[cursorField] : 0;
+      mainBadge = pool[cursor % pool.length];
 
       tx.set(visitorRef, {
         createdAt: serverTimestamp(),
         lastSeenAt: serverTimestamp(),
         mainBadge,
+        badgeBucket: bucket,
         totalSeconds: 0,
-        dailyClicks: { [todayKey]: 1 },
+        dailyClicks: { [todayKey]: 1 }
       });
 
       tx.update(statsRef, {
         uniqueVisitors: increment(1),
-        badgeCursor: increment(1)
+        [cursorField]: increment(1)
       });
     } else {
       const v = visitorSnap.data();
@@ -159,7 +145,7 @@ async function ensureUniqueAndBadge() {
       ? ((visitorSnap.data().dailyClicks && visitorSnap.data().dailyClicks[todayKey]) || 0) + 1
       : 1;
 
-    const nextUniqueVisitors = isNew ? (stats.uniqueVisitors + 1) : stats.uniqueVisitors;
+    const nextUniqueVisitors = isNew ? ((stats.uniqueVisitors || 0) + 1) : (stats.uniqueVisitors || 0);
 
     return { uid, mainBadge, uniqueVisitors: nextUniqueVisitors, clicksToday: assumedClicks };
   });
@@ -173,6 +159,7 @@ let currentUid = null;
 let baseTotalSeconds = 0;
 let clicksTodayCached = 1;
 
+// Active-only time accumulator (this session, visible-only)
 let activeSessionSeconds = 0;
 let isVisibleRunning = true;
 
@@ -195,9 +182,9 @@ async function flushTimeOnPage() {
   try {
     const visitorRef = doc(db, "visitors", currentUid);
     await updateDoc(visitorRef, { totalSeconds: increment(toFlush) });
-
     baseTotalSeconds += toFlush;
   } catch {
+    // ignore
   }
 }
 
@@ -322,18 +309,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
 
+    // Keep only ONE pagehide listener (you had it duplicated)
     window.addEventListener("pagehide", () => {
       flushTimeOnPage();
     });
 
-window.addEventListener("pagehide", () => {
-  flushTimeOnPage();
-});
-
-window.addEventListener("beforeunload", () => {
-  flushTimeOnPage();
-});
-
+    window.addEventListener("beforeunload", () => {
+      flushTimeOnPage();
+    });
 
     updateTimeSinceLaunch();
   } catch (e) {
