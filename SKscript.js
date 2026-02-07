@@ -1,4 +1,3 @@
-// Firebase (CDN modules)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
 import {
@@ -11,7 +10,6 @@ import {
   updateDoc
 } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
-// --- Your Firebase config (from your snippet) ---
 const firebaseConfig = {
   apiKey: "AIzaSyC6JfYTZHeoqxNk5Ie5htO3wu6FLtuGYeM",
   authDomain: "instagram-bio-be1ce.firebaseapp.com",
@@ -26,9 +24,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// -----------------------------------------------------
-// Badge pools (your selected list)
-// -----------------------------------------------------
 const BADGES = [
   // Morning
   "Morning Shift",
@@ -57,7 +52,7 @@ const BADGES = [
   "Cursor Operator",
   "Full-Screen Visitor",
 
-  // Time on page (used as tags, but included in global pool to keep variety)
+  // Time on page
   "Drive-By",
   "In & Out",
   "Quick Scan",
@@ -66,7 +61,7 @@ const BADGES = [
   "Verified Interest",
   "AFK",
 
-  // Clicks today (also used as tags)
+  // Clicks today
   "Single Visit",
   "Second Look",
   "Came Back?!",
@@ -76,9 +71,6 @@ const BADGES = [
   "Verified Checker"
 ];
 
-// -----------------------------------------------------
-// Helpers: category tags (computed locally)
-// -----------------------------------------------------
 function getTimeOfDayTag() {
   const h = new Date().getHours();
   if (h >= 5 && h < 12) return "Morning";
@@ -88,14 +80,12 @@ function getTimeOfDayTag() {
 }
 
 function getDeviceTag() {
-  // Simple + reliable enough: touch + small width implies mobile
   const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
   const isSmall = window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
   return (isTouch && isSmall) ? "Mobile" : "Desktop";
 }
 
 function getTodayKey() {
-  // YYYY-MM-DD for daily counters (safe as Firestore map key)
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -122,11 +112,7 @@ function pickTimeOnPageTag(seconds) {
   return "AFK";
 }
 
-// -----------------------------------------------------
-// Unique counting + main badge assignment (transaction)
-// -----------------------------------------------------
 async function ensureUniqueAndBadge() {
-  // 1) Sign in anonymously (gives stable uid for this browser profile)
   const cred = await signInAnonymously(auth);
   const uid = cred.user.uid;
 
@@ -147,7 +133,6 @@ async function ensureUniqueAndBadge() {
     let isNew = false;
     let mainBadge = null;
 
-    // If visitor doc does not exist: first time we have EVER seen this uid
     if (!visitorSnap.exists()) {
       isNew = true;
 
@@ -168,21 +153,17 @@ async function ensureUniqueAndBadge() {
         badgeCursor: increment(1)
       });
     } else {
-      // Returning visitor: do not increment uniqueVisitors
       const v = visitorSnap.data();
       mainBadge = v.mainBadge || "Silent Scroller";
 
-      // Increment today's click count + update lastSeen
       tx.update(visitorRef, {
         lastSeenAt: serverTimestamp(),
         [dayField]: increment(1)
       });
     }
 
-    // Read back the latest stats (transaction returns our computed next values)
     const nextUniqueVisitors = isNew ? (stats.uniqueVisitors + 1) : stats.uniqueVisitors;
 
-    // Also return today's click count after increment (estimate; we’ll re-fetch for accuracy below)
     const assumedClicks = visitorSnap.exists()
       ? ((visitorSnap.data().dailyClicks && visitorSnap.data().dailyClicks[todayKey]) || 0) + 1
       : 1;
@@ -193,9 +174,6 @@ async function ensureUniqueAndBadge() {
   return result;
 }
 
-// -----------------------------------------------------
-// Time on page tracking (best-effort)
-// -----------------------------------------------------
 let sessionStart = null;
 let currentUid = null;
 
@@ -203,22 +181,17 @@ async function flushTimeOnPage() {
   if (!currentUid || sessionStart == null) return;
 
   const seconds = Math.max(0, Math.round((Date.now() - sessionStart) / 1000));
-  sessionStart = Date.now(); // reset anchor
+  sessionStart = Date.now();
 
-  // Avoid spamming tiny increments
   if (seconds < 2) return;
 
   try {
     const visitorRef = doc(db, "visitors", currentUid);
     await updateDoc(visitorRef, { totalSeconds: increment(seconds) });
   } catch {
-    // ignore (page closing, network, etc.)
   }
 }
 
-// -----------------------------------------------------
-// UI updates
-// -----------------------------------------------------
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
@@ -242,9 +215,8 @@ async function renderTags(uid) {
   setText("viewerTags", `${timeOfDay} • ${device} • ${clicksTag} • ${timeTag}`);
 }
 
-// Your existing launch timer logic (kept)
 function updateTimeSinceLaunch() {
-  const launchDate = new Date(Date.UTC(2024, 9, 29, 21 + 4, 38, 0)); // Oct = 9, EST = UTC+4
+  const launchDate = new Date(Date.UTC(2024, 9, 29, 21 + 4, 38, 0));
 
   function getTimeDiffComponents(now, then) {
     const diffMs = now - then;
@@ -284,9 +256,6 @@ function updateTimeSinceLaunch() {
   scheduleRender();
 }
 
-// -----------------------------------------------------
-// Boot
-// -----------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     const { uid, mainBadge, uniqueVisitors } = await ensureUniqueAndBadge();
@@ -294,21 +263,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     currentUid = uid;
     sessionStart = Date.now();
 
-    // Update UI
     setText("viewCount", String(uniqueVisitors));
     setText("viewerBadge", mainBadge);
     setText("marqueeBadge", `badge: ${mainBadge}`);
 
     await renderTags(uid);
 
-    // Track time on page (best-effort)
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") flushTimeOnPage();
       if (document.visibilityState === "visible") sessionStart = Date.now();
     });
 
     window.addEventListener("beforeunload", () => {
-      // best-effort flush (may not always complete)
       flushTimeOnPage();
     });
 
