@@ -1,35 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SK! Personal Web</title>
-  <link rel="stylesheet" href="stylesheet.css">
-</head>
-<body>
 
-  <div class="marquee">
-    <div class="marquee-content">hello loyal page viewer</div>
-  </div>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="stylesheet.css" />
+</head>
+
+<body>
+  <header class="topbar" role="banner">
+    <div class="marquee-pill" role="status" aria-live="polite">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span class="live-label">LIVE</span>
+
+      <div class="marquee-track">
+        <div class="marquee-content">
+          <span>hello loyal page viewer</span>
+          <span class="sep">•</span>
+          <span id="marqueeBadge">assigning badge…</span>
+        </div>
+      </div>
+    </div>
+  </header>
 
   <main>
-    <section aria-label="Unique view count">
-      <h1>
-        This page has <span id="viewCount" aria-live="polite">Loading...</span> unique views
+    <section class="hero" aria-label="Unique view count">
+      <h1 class="title">
+        This page has <span id="viewCount" class="neon" aria-live="polite">Loading…</span> unique views
       </h1>
-      <p>(no i can't see exactly who viewed my page)</p>
+      <p class="subtle">(no, I can’t see exactly who viewed my page)</p>
+
+      <div class="badge-row" aria-label="Viewer badge">
+        <span class="badge-label">Your badge</span>
+        <span id="viewerBadge" class="badge-pill">loading…</span>
+      </div>
+
+      <div class="badge-row" aria-label="Viewer tags">
+        <span class="badge-label">Tags</span>
+        <span id="viewerTags" class="tag-line">loading…</span>
+      </div>
     </section>
   </main>
-  
 
-  <div class="launch-container">
+  <footer class="launch-container">
     <h3 class="launch-info">
-      This page was launched on <span class="highlight">10/29/24 21:38 EST</span>.
-      <br>
-      It has been <span id="timeSinceLaunch" class="highlight">calculating...</span> since launch.
+      This page was launched on <span class="highlight neon">10/29/24 21:38 EST</span>.
+      <br />
+      It has been <span id="timeSinceLaunch" class="highlight neon">calculating…</span> since launch.
     </h3>
-  </div> 
+  </footer>
 
-  <script src="SKscript.js"></script>
+  <!-- IMPORTANT: module script for Firebase imports -->
+  <script type="module" src="SKscript.js"></script>
 </body>
 </html>
