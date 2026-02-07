@@ -109,10 +109,11 @@ body::before{
   align-items: center;
   gap: 10px;
   white-space: nowrap;
-  padding-left: 10%;
-  animation: marquee 18s linear infinite;
+  padding-left: 0;
+  animation: marquee 14s linear infinite;
   color: rgba(245,245,247,0.82);
   font-weight: 600;
+  will-change: transform;
 }
 
 .marquee-content .sep{
