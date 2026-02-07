@@ -71,26 +71,18 @@ const BADGES = [
   "Verified Checker"
 ];
 
-function getTimeOfDayTag() {
-  const h = new Date().getHours();
-  if (h >= 5 && h < 12) return "Morning";
-  if (h >= 12 && h < 18) return "Day";
-  if (h >= 18 && h < 23) return "Night";
-  return "Late Night";
-}
-
-function getDeviceTag() {
-  const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
-  const isSmall = window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
-  return (isTouch && isSmall) ? "Mobile" : "Desktop";
-}
-
 function getTodayKey() {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function getDeviceTag() {
+  const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+  const isSmall = window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
+  return (isTouch && isSmall) ? "Mobile" : "Desktop";
 }
 
 function pickClicksTodayTag(clicks) {
@@ -128,7 +120,9 @@ async function ensureUniqueAndBadge() {
       tx.get(visitorRef)
     ]);
 
-    const stats = statsSnap.exists() ? statsSnap.data() : { uniqueVisitors: 0, badgeCursor: 0 };
+    const stats = statsSnap.exists()
+      ? statsSnap.data()
+      : { uniqueVisitors: 0, badgeCursor: 0 };
 
     let isNew = false;
     let mainBadge = null;
@@ -145,7 +139,6 @@ async function ensureUniqueAndBadge() {
         mainBadge,
         totalSeconds: 0,
         dailyClicks: { [todayKey]: 1 },
-        deviceFirstSeen: getDeviceTag()
       });
 
       tx.update(statsRef, {
@@ -162,11 +155,11 @@ async function ensureUniqueAndBadge() {
       });
     }
 
-    const nextUniqueVisitors = isNew ? (stats.uniqueVisitors + 1) : stats.uniqueVisitors;
-
     const assumedClicks = visitorSnap.exists()
       ? ((visitorSnap.data().dailyClicks && visitorSnap.data().dailyClicks[todayKey]) || 0) + 1
       : 1;
+
+    const nextUniqueVisitors = isNew ? (stats.uniqueVisitors + 1) : stats.uniqueVisitors;
 
     return { uid, mainBadge, uniqueVisitors: nextUniqueVisitors, clicksToday: assumedClicks };
   });
@@ -177,17 +170,33 @@ async function ensureUniqueAndBadge() {
 let sessionStart = null;
 let currentUid = null;
 
+let baseTotalSeconds = 0;
+let clicksTodayCached = 1;
+
+let activeSessionSeconds = 0;
+let isVisibleRunning = true;
+
 async function flushTimeOnPage() {
-  if (!currentUid || sessionStart == null) return;
+  if (!currentUid) return;
 
-  const seconds = Math.max(0, Math.round((Date.now() - sessionStart) / 1000));
-  sessionStart = Date.now();
+  if (isVisibleRunning && sessionStart != null) {
+    const elapsed = Math.max(0, Math.floor((Date.now() - sessionStart) / 1000));
+    if (elapsed > 0) {
+      activeSessionSeconds += elapsed;
+      sessionStart = Date.now();
+    }
+  }
 
-  if (seconds < 2) return;
+  if (activeSessionSeconds < 2) return;
+
+  const toFlush = activeSessionSeconds;
+  activeSessionSeconds = 0;
 
   try {
     const visitorRef = doc(db, "visitors", currentUid);
-    await updateDoc(visitorRef, { totalSeconds: increment(seconds) });
+    await updateDoc(visitorRef, { totalSeconds: increment(toFlush) });
+
+    baseTotalSeconds += toFlush;
   } catch {
   }
 }
@@ -203,16 +212,27 @@ async function renderTags(uid) {
   const snap = await getDoc(visitorRef);
   const v = snap.exists() ? snap.data() : {};
 
-  const timeOfDay = getTimeOfDayTag();
-  const device = getDeviceTag();
+  baseTotalSeconds = (typeof v.totalSeconds === "number") ? v.totalSeconds : 0;
 
-  const clicksToday = (v.dailyClicks && v.dailyClicks[todayKey]) ? v.dailyClicks[todayKey] : 1;
-  const clicksTag = pickClicksTodayTag(clicksToday);
+  if (v.dailyClicks && typeof v.dailyClicks[todayKey] === "number") {
+    clicksTodayCached = v.dailyClicks[todayKey];
+  }
 
-  const totalSeconds = typeof v.totalSeconds === "number" ? v.totalSeconds : 0;
-  const timeTag = pickTimeOnPageTag(totalSeconds);
+  updateTagsLive();
+}
 
-  setText("viewerTags", `${timeOfDay} • ${device} • ${clicksTag} • ${timeTag}`);
+function updateTagsLive() {
+  const liveElapsed =
+    (isVisibleRunning && sessionStart != null)
+      ? Math.max(0, Math.floor((Date.now() - sessionStart) / 1000))
+      : 0;
+
+  const totalActiveSeconds = baseTotalSeconds + activeSessionSeconds + liveElapsed;
+
+  const timeTag = pickTimeOnPageTag(totalActiveSeconds);
+  const clicksTag = pickClicksTodayTag(clicksTodayCached);
+
+  setText("viewerTags", `${clicksTag} • ${timeTag}`);
 }
 
 function updateTimeSinceLaunch() {
@@ -258,25 +278,62 @@ function updateTimeSinceLaunch() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    const { uid, mainBadge, uniqueVisitors } = await ensureUniqueAndBadge();
+    const { uid, mainBadge, uniqueVisitors, clicksToday } = await ensureUniqueAndBadge();
 
     currentUid = uid;
     sessionStart = Date.now();
 
+    clicksTodayCached = clicksToday;
+
     setText("viewCount", String(uniqueVisitors));
     setText("viewerBadge", mainBadge);
-    setText("marqueeBadge", `badge: ${mainBadge}`);
+
+    const statsSnap = await getDoc(doc(db, "stats", "global"));
+    if (statsSnap.exists() && typeof statsSnap.data().uniqueVisitors === "number") {
+      setText("viewCount", String(statsSnap.data().uniqueVisitors));
+    }
 
     await renderTags(uid);
 
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") flushTimeOnPage();
-      if (document.visibilityState === "visible") sessionStart = Date.now();
+    setInterval(updateTagsLive, 1000);
+
+    setInterval(async () => {
+      await flushTimeOnPage();
+      updateTagsLive();
+    }, 15000);
+
+    document.addEventListener("visibilitychange", async () => {
+      if (document.visibilityState === "hidden") {
+        if (isVisibleRunning && sessionStart != null) {
+          const elapsed = Math.max(0, Math.floor((Date.now() - sessionStart) / 1000));
+          activeSessionSeconds += elapsed;
+        }
+        isVisibleRunning = false;
+        sessionStart = null;
+
+        await flushTimeOnPage();
+        updateTagsLive();
+      }
+
+      if (document.visibilityState === "visible") {
+        isVisibleRunning = true;
+        sessionStart = Date.now();
+        updateTagsLive();
+      }
     });
 
-    window.addEventListener("beforeunload", () => {
+    window.addEventListener("pagehide", () => {
       flushTimeOnPage();
     });
+
+window.addEventListener("pagehide", () => {
+  flushTimeOnPage();
+});
+
+window.addEventListener("beforeunload", () => {
+  flushTimeOnPage();
+});
+
 
     updateTimeSinceLaunch();
   } catch (e) {
@@ -284,7 +341,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     setText("viewCount", "N/A");
     setText("viewerBadge", "N/A");
     setText("viewerTags", "N/A");
-    setText("marqueeBadge", "offline");
     updateTimeSinceLaunch();
   }
 });
